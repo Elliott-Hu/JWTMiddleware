@@ -1,0 +1,42 @@
+{
+  "name": "jwt-rt-middleware",
+  "version": "0.0.1",
+  "description": "适用于routing-controllers框架的JWT校验中间件",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Elliott-Hu/JWTMiddleware.git"
+  },
+  "keywords": [
+    "jwt",
+    "middleware",
+    "routing-controllers",
+    "koa"
+  ],
+  "author": "handsomebee",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Elliott-Hu/JWTMiddleware/issues"
+  },
+  "homepage": "https://github.com/Elliott-Hu/JWTMiddleware#readme",
+  "devDependencies": {
+    "@types/jsonwebtoken": "^8.5.0",
+    "@types/koa": "^2.13.1",
+    "@typescript-eslint/parser": "^4.16.1",
+    "eslint": "^7.21.0",
+    "eslint-config-google": "^0.14.0",
+    "eslint-config-prettier": "^8.1.0",
+    "eslint-plugin-prettier": "^3.3.1",
+    "prettier": "2.2.1",
+    "typescript": "^4.2.2"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^8.5.1",
+    "koa": "^2.13.1",
+    "koa-jwt": "^4.0.0",
+    "routing-controllers": "^0.9.0"
+  }
+}
