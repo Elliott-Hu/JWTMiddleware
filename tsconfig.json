@@ -7,8 +7,10 @@
     "noImplicitAny": true,
     "moduleResolution": "node",
     "sourceMap": true,
-    "outDir": "dist",
+    "outDir": "build",
     "baseUrl": ".",
+    "declaration": true,
+    "importHelpers": true,
     "paths": {
       "*": [
         "node_modules/*",

@@ -1,5 +1,5 @@
-import { KoaMiddlewareInterface, UnauthorizedError } from "routing-controllers";
-import { Context } from "koa";
+import * as rtc from "routing-controllers";
+import * as koa from "koa";
 import * as koaJWT from "koa-jwt";
 import { sign, decode } from "jsonwebtoken";
 import {
@@ -7,6 +7,10 @@ import {
   DEFAULT_STATE_TOKEN_KEY,
   DEFAULT_TOKEN_EXPIRED,
 } from "./const";
+import * as ct from "class-transformer";
+
+type ClassConstructor<T> = ct.ClassConstructor<T>;
+type KoaMiddlewareInterface = rtc.KoaMiddlewareInterface;
 
 interface Payload {
   [propname: string]: any;
@@ -33,6 +37,8 @@ interface Options<T = any> {
   handleValidatePayload?: (payload: T) => boolean;
 }
 
+const UnauthorizedError = rtc.UnauthorizedError;
+
 /**
  * 创建一个JWT校验中间件
  *
@@ -41,7 +47,9 @@ interface Options<T = any> {
  * @param {Options<T>} options
  * @return {Middleware}
  */
-export function createJWTMiddleware<T = any>(options: Options<T>) {
+export function createJWTMiddleware<T = any>(
+  options: Options<T>
+): ClassConstructor<KoaMiddlewareInterface> {
   const {
     passthrough = false,
     secret,
@@ -86,7 +94,7 @@ export function createJWTMiddleware<T = any>(options: Options<T>) {
    * @param {Payload} payload
    */
   const injectTokenToResponse = (
-    ctx: Context,
+    ctx: koa.Context,
     token: string,
     payload: Payload
   ) => {
@@ -104,7 +112,7 @@ export function createJWTMiddleware<T = any>(options: Options<T>) {
    * @param {string} token
    * @return {Promise<contextState>}
    */
-  const resignToken = async (ctx: Context, token: string): Promise<any> => {
+  const resignToken = async (ctx: koa.Context, token: string): Promise<any> => {
     const decodeInfomation = <
       {
         header?: object;
@@ -139,7 +147,7 @@ export function createJWTMiddleware<T = any>(options: Options<T>) {
    * @param {koaJWT.Options} options
    * @return {string}
    */
-  const getToken = (ctx: Context, options: koaJWT.Options): string => {
+  const getToken = (ctx: koa.Context, options: koaJWT.Options): string => {
     if (
       !ctx.request ||
       !ctx.request.header ||
@@ -183,7 +191,10 @@ export function createJWTMiddleware<T = any>(options: Options<T>) {
      * @param {Context} ctx
      * @param {*} _next
      */
-    async use(ctx: Context, _next: (err?: any) => Promise<any>): Promise<any> {
+    async use(
+      ctx: koa.Context,
+      _next: (err?: any) => Promise<any>
+    ): Promise<any> {
       const next = async (err?: any): Promise<any> => {
         const payload = ctx.state[payloadKey];
         const token = ctx.state[tokenKey];

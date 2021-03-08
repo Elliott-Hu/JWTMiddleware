@@ -1,1 +1,3 @@
-export { createJWTMiddleware } from "./factory";
+import { createJWTMiddleware } from "./factory";
+
+export { createJWTMiddleware };
