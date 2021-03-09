@@ -11,6 +11,7 @@ import * as ct from "class-transformer";
 
 type ClassConstructor<T> = ct.ClassConstructor<T>;
 type KoaMiddlewareInterface = rtc.KoaMiddlewareInterface;
+type KoaContext = koa.Context;
 
 interface Payload {
   [propname: string]: any;
@@ -26,13 +27,29 @@ export interface DecodeInfomation {
   payload: JWTPayload;
 }
 
+export interface TokenCookie {
+  type: "cookie";
+  key: string;
+  domain?: string;
+  httpOnly?: boolean;
+  path?: string;
+}
+
+export interface TokenHeader {
+  type: "header";
+  // key?: string;
+  // resKey?: string;
+}
+
 interface Options<T = any> {
+  token: TokenCookie | TokenHeader;
+  ctxState: {
+    tokenKey?: string;
+    payloadKey?: string;
+  };
   passthrough?: boolean;
   secret: string;
-  cookie?: string;
   expiresIn?: string;
-  tokenKey?: string;
-  payloadKey?: string;
   handleInsertPayload?: <A extends T>(payload: T) => A;
   handleValidatePayload?: (payload: T) => boolean;
 }
@@ -49,14 +66,19 @@ const UnauthorizedError = rtc.UnauthorizedError;
  */
 export function createJWTMiddleware<T = any>(
   options: Options<T>
-): ClassConstructor<KoaMiddlewareInterface> {
+): ClassConstructor<KoaMiddlewareInterface> & {
+  injectToken: (ctx: KoaContext, payload: T) => void;
+} {
   const {
     passthrough = false,
     secret,
-    cookie,
+    token: tokenOption,
+    ctxState: {
+      tokenKey = DEFAULT_STATE_TOKEN_KEY,
+      payloadKey = DEFAULT_STATE_PAYLOAD_KEY,
+    } = {},
+    // cookie,
     expiresIn = DEFAULT_TOKEN_EXPIRED,
-    tokenKey = DEFAULT_STATE_TOKEN_KEY,
-    payloadKey = DEFAULT_STATE_PAYLOAD_KEY,
     handleInsertPayload,
     handleValidatePayload,
   } = options;
@@ -94,12 +116,12 @@ export function createJWTMiddleware<T = any>(
    * @param {Payload} payload
    */
   const injectTokenToResponse = (
-    ctx: koa.Context,
+    ctx: KoaContext,
     token: string,
     payload: Payload
   ) => {
-    if (cookie) {
-      ctx.cookies.set(cookie, token, { httpOnly: true });
+    if (tokenOption.type === "cookie") {
+      ctx.cookies.set(tokenOption.key, token, { httpOnly: true });
       return;
     }
     ctx.set("Set-Authorization", `Bearer ${token}`);
@@ -112,7 +134,7 @@ export function createJWTMiddleware<T = any>(
    * @param {string} token
    * @return {Promise<contextState>}
    */
-  const resignToken = async (ctx: koa.Context, token: string): Promise<any> => {
+  const resignToken = async (ctx: KoaContext, token: string): Promise<any> => {
     const decodeInfomation = <
       {
         header?: object;
@@ -147,7 +169,7 @@ export function createJWTMiddleware<T = any>(
    * @param {koaJWT.Options} options
    * @return {string}
    */
-  const getToken = (ctx: koa.Context, options: koaJWT.Options): string => {
+  const getToken = (ctx: KoaContext, options: koaJWT.Options): string => {
     if (
       !ctx.request ||
       !ctx.request.header ||
@@ -176,7 +198,7 @@ export function createJWTMiddleware<T = any>(
 
   const tokenValidateHandler = koaJWT.default({
     secret,
-    cookie,
+    cookie: tokenOption.type === "cookie" ? tokenOption.key : undefined,
     tokenKey: "token",
     key: "payload",
     passthrough: true,
@@ -186,13 +208,26 @@ export function createJWTMiddleware<T = any>(
 
   return class JWTMiddleware implements KoaMiddlewareInterface {
     /**
+     * 签发JWT
+     *
+     * @static
+     * @param {KoaContext} ctx
+     * @param {T} payload
+     */
+    static injectToken(ctx: KoaContext, payload: T) {
+      const _payload = validatePayload(payload);
+      const token = signToken(_payload);
+      injectTokenToResponse(ctx, token, payload);
+    }
+
+    /**
      *
      *
      * @param {Context} ctx
      * @param {*} _next
      */
     async use(
-      ctx: koa.Context,
+      ctx: KoaContext,
       _next: (err?: any) => Promise<any>
     ): Promise<any> {
       const next = async (err?: any): Promise<any> => {
