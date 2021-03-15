@@ -68,6 +68,7 @@ export function createJWTMiddleware<T = any>(
   options: Options<T>
 ): ClassConstructor<KoaMiddlewareInterface> & {
   injectToken: (ctx: KoaContext, payload: T) => void;
+  currentUserChecker: (action: rtc.Action) => Promise<T>;
 } {
   const {
     passthrough = false,
@@ -207,18 +208,18 @@ export function createJWTMiddleware<T = any>(
   });
 
   return class JWTMiddleware implements KoaMiddlewareInterface {
-    /**
-     * 签发JWT
-     *
-     * @static
-     * @param {KoaContext} ctx
-     * @param {T} payload
-     */
-    static injectToken(ctx: KoaContext, payload: T) {
+    static injectToken = (ctx: KoaContext, payload: T) => {
       const _payload = validatePayload(payload);
       const token = signToken(_payload);
       injectTokenToResponse(ctx, token, payload);
-    }
+    };
+
+    static currentUserChecker = async (action: rtc.Action): Promise<T> => {
+      const payload = <T>action.context.state.payload;
+      // 修复前版本缩写难以理解的问题
+      // 与后端字段名统一
+      return payload;
+    };
 
     /**
      *
