@@ -5,6 +5,7 @@
   "main": "./build/index.js",
   "typings": "./build/index.d.ts",
   "scripts": {
+    "prepublish": "yarn build",
     "build": "tsc -p ."
   },
   "repository": {
