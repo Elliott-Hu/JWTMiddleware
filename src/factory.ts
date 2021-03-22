@@ -92,7 +92,12 @@ export function createJWTMiddleware<T = any>(
    * 如果是顾问身份登录登录态的有效期为24小时，否则有效期为两小时
    * @return {string}
    */
-  const signToken = (payload: T) => sign(payload as any, secret, { expiresIn });
+  const signToken = (payload: T) => {
+    const { ..._payload } = payload as any;
+    delete _payload.exp;
+
+    return sign(_payload as any, secret, { expiresIn });
+  };
 
   /**
    * 校验JWT携带的 Payload 完整性
