@@ -196,9 +196,6 @@ export function createJWTMiddleware<T = any>(
       }
     }
 
-    if (!options.passthrough) {
-      throw new UnauthorizedError("错误的token格式，请重新登陆");
-    }
     return "";
   };
 
