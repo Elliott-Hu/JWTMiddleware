@@ -95,6 +95,7 @@ export function createJWTMiddleware<T = any>(
   const signToken = (payload: T) => {
     const { ..._payload } = payload as any;
     delete _payload.exp;
+    delete _payload.iat;
 
     return sign(_payload as any, secret, { expiresIn });
   };
