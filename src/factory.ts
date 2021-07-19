@@ -6,10 +6,13 @@ import {
   DEFAULT_STATE_PAYLOAD_KEY,
   DEFAULT_STATE_TOKEN_KEY,
   DEFAULT_TOKEN_EXPIRED,
+  DEFAULT_TOKEN_EXPIRED_AUTO_REFRESH,
 } from "./const";
-import * as ct from "class-transformer";
+import type * as ct from "class-transformer";
+import { timeSpan } from "./util";
 
-type ClassConstructor<T> = ct.ClassConstructor<T>;
+export type ClassConstructor<T> = ct.ClassConstructor<T>;
+
 type KoaMiddlewareInterface = rtc.KoaMiddlewareInterface;
 type KoaContext = koa.Context;
 
@@ -49,7 +52,20 @@ interface Options<T = any> {
   };
   passthrough?: boolean;
   secret: string;
-  expiresIn?: string;
+  /**
+   * 单个 token 的有效期
+   *
+   * @type {(string | number)}
+   * @memberof Options
+   */
+  expiresIn?: string | number;
+  /**
+   * token 自动重签的有效期
+   *
+   * @type {(string | number)}
+   * @memberof Options
+   */
+  expiresInAutoRefresh?: string | number;
   handleInsertPayload?: <A extends T>(payload: T) => A;
   handleValidatePayload?: (payload: T) => boolean;
 }
@@ -65,34 +81,50 @@ const UnauthorizedError = rtc.UnauthorizedError;
  * @return {Middleware}
  */
 export function createJWTMiddleware<T = any>(
-  options: Options<T>
+  options: Options<T> | (() => Options<T>)
 ): ClassConstructor<KoaMiddlewareInterface> & {
   injectToken: (ctx: KoaContext, payload: T) => void;
   currentUserChecker: (action: rtc.Action) => Promise<T>;
+  resignToken: (ctx: KoaContext, token: string) => Promise<any>;
 } {
-  const {
-    passthrough = false,
-    secret,
-    token: tokenOption,
-    ctxState: {
-      tokenKey = DEFAULT_STATE_TOKEN_KEY,
-      payloadKey = DEFAULT_STATE_PAYLOAD_KEY,
-    } = {},
-    // cookie,
-    expiresIn = DEFAULT_TOKEN_EXPIRED,
-    handleInsertPayload,
-    handleValidatePayload,
-  } = options;
+  const getOptions = (): Options<T> => {
+    const {
+      passthrough = false,
+      secret,
+      token: tokenOption,
+      ctxState: {
+        tokenKey = DEFAULT_STATE_TOKEN_KEY,
+        payloadKey = DEFAULT_STATE_PAYLOAD_KEY,
+      } = {},
+      // cookie,
+      expiresIn = DEFAULT_TOKEN_EXPIRED,
+      expiresInAutoRefresh = DEFAULT_TOKEN_EXPIRED_AUTO_REFRESH,
+      handleInsertPayload,
+      handleValidatePayload,
+    } = typeof options === "function" ? options() : options;
+
+    return {
+      passthrough,
+      secret,
+      token: tokenOption,
+      ctxState: { tokenKey, payloadKey },
+      expiresIn,
+      expiresInAutoRefresh,
+      handleInsertPayload,
+      handleValidatePayload,
+    };
+  };
 
   /**
    * 签发token
    *
    * @param {payload} payload
-   *
-   * 如果是顾问身份登录登录态的有效期为24小时，否则有效期为两小时
+   * @param {Options<T>} options
    * @return {string}
    */
-  const signToken = (payload: T) => {
+  const signToken = (payload: T, options: Options<T>) => {
+    const { secret, expiresIn } = options;
+
     const { ..._payload } = payload as any;
     delete _payload.exp;
     delete _payload.iat;
@@ -103,10 +135,13 @@ export function createJWTMiddleware<T = any>(
   /**
    * 校验JWT携带的 Payload 完整性
    *
-   * @param {Payload} payload
-   * @return {Payload}
+   * @param {T} payload
+   * @param {Options<T>} options
+   * @return {T}
    */
-  const validatePayload = (payload: T) => {
+  const validatePayload = (payload: T, options: Options<T>) => {
+    const { handleValidatePayload } = options;
+
     if (handleValidatePayload && !handleValidatePayload(payload)) {
       throw new UnauthorizedError(
         `token payload 数据不完整：${JSON.stringify(payload || {})}`
@@ -118,15 +153,19 @@ export function createJWTMiddleware<T = any>(
   /**
    * 将生成的令牌填充到 http response
    *
-   * @param {Context} ctx
+   * @param {KoaContext} ctx
    * @param {string} token
    * @param {Payload} payload
+   * @param {Options<T>} options
    */
   const injectTokenToResponse = (
     ctx: KoaContext,
     token: string,
-    payload: Payload
+    payload: Payload,
+    options: Options<T>
   ) => {
+    const { token: tokenOption } = options;
+
     if (tokenOption.type === "cookie") {
       ctx.cookies.set(tokenOption.key, token, { httpOnly: true });
       return;
@@ -137,11 +176,21 @@ export function createJWTMiddleware<T = any>(
   /**
    * token 重签处理
    *
-   * @param {Context} ctx
+   * @param {KoaContext} ctx
    * @param {string} token
+   * @param {Options<T>} options
    * @return {Promise<contextState>}
    */
-  const resignToken = async (ctx: KoaContext, token: string): Promise<any> => {
+  const resignToken = async (
+    ctx: KoaContext,
+    token: string,
+    options?: Options<T>
+  ): Promise<any> => {
+    const {
+      expiresInAutoRefresh,
+      ctxState: { tokenKey, payloadKey },
+    } = options || getOptions();
+
     const decodeInfomation = <
       {
         header?: object;
@@ -154,11 +203,11 @@ export function createJWTMiddleware<T = any>(
 
       const now = Date.now() / 1000;
       const exp = <number>payload.exp;
-      if (now > exp && now < exp + 86400 * 7) {
+      if (now > exp && now < timeSpan(expiresInAutoRefresh, exp)) {
         // 清理冗余信息后再签发token
-        payload = validatePayload(payload);
-        const token = signToken(payload);
-        injectTokenToResponse(ctx, token, payload);
+        payload = validatePayload(payload, options);
+        const token = signToken(payload, options);
+        injectTokenToResponse(ctx, token, payload, options);
         const contextState = {
           [tokenKey]: token,
           [payloadKey]: payload,
@@ -169,14 +218,24 @@ export function createJWTMiddleware<T = any>(
     }
     throw new UnauthorizedError("token解析失败，请重新登陆");
   };
+
   /**
    * 从header中解析token
    *
-   * @param {Context} ctx
-   * @param {koaJWT.Options} options
+   * @param {Options<T>} options
+   * @param {KoaContext} ctx
+   * @param {koaJWT.Options} jwtOptions
    * @return {string}
    */
-  const getToken = (ctx: KoaContext, options: koaJWT.Options): string => {
+  const getToken = (
+    options: Options<T>,
+    ctx: KoaContext,
+    jwtOptions: koaJWT.Options
+  ): string => {
+    const {
+      ctxState: { tokenKey },
+    } = options;
+
     if (
       !ctx.request ||
       !ctx.request.header ||
@@ -200,25 +259,33 @@ export function createJWTMiddleware<T = any>(
     return "";
   };
 
-  const tokenValidateHandler = koaJWT.default({
-    secret,
-    cookie: tokenOption.type === "cookie" ? tokenOption.key : undefined,
-    tokenKey: "token",
-    key: "payload",
-    passthrough: true,
-    getToken,
-    isRevoked: async () => false,
-  });
+  const getTokenValidateHandler = (options: Options<T>) => {
+    const { token: tokenOption, secret } = options;
+    return koaJWT.default({
+      secret,
+      cookie: tokenOption.type === "cookie" ? tokenOption.key : undefined,
+      tokenKey: "token",
+      key: "payload",
+      passthrough: true,
+      getToken: getToken.bind(null, options),
+      isRevoked: async () => false,
+    });
+  };
 
-  return class JWTMiddleware implements KoaMiddlewareInterface {
+  return class JWTMiddleware {
+    private getOptions = getOptions;
+
+    static resignToken = resignToken;
     static injectToken = (ctx: KoaContext, payload: T) => {
-      const _payload = validatePayload(payload);
-      const token = signToken(_payload);
-      injectTokenToResponse(ctx, token, payload);
+      const options = getOptions();
+      const _payload = validatePayload(payload, options);
+      const token = signToken(_payload, options);
+      injectTokenToResponse(ctx, token, payload, options);
     };
 
     static currentUserChecker = async (action: rtc.Action): Promise<T> => {
-      const payload = <T>action.context.state.payload;
+      const options = getOptions();
+      const payload = <T>action.context.state[options.ctxState.payloadKey];
       // 修复前版本缩写难以理解的问题
       // 与后端字段名统一
       return payload;
@@ -234,6 +301,14 @@ export function createJWTMiddleware<T = any>(
       ctx: KoaContext,
       _next: (err?: any) => Promise<any>
     ): Promise<any> {
+      const options = this.getOptions();
+      const {
+        secret,
+        ctxState: { payloadKey, tokenKey },
+        handleInsertPayload,
+        passthrough,
+      } = options;
+
       const next = async (err?: any): Promise<any> => {
         const payload = ctx.state[payloadKey];
         const token = ctx.state[tokenKey];
@@ -245,18 +320,18 @@ export function createJWTMiddleware<T = any>(
         return _next(err);
       };
 
-      await tokenValidateHandler(ctx, () => Promise.resolve());
+      await getTokenValidateHandler(options)(ctx, () => Promise.resolve());
 
       if (!ctx.state.token) {
         if (passthrough) {
           return next();
         }
         // 如果没有获取到ctx.state.token的情况下，有可能是token失效了，需要重签
-        const token = getToken(ctx, {
+        const token = getToken(options, ctx, {
           passthrough: true,
           secret,
         });
-        const state = await resignToken(ctx, token);
+        const state = await resignToken(ctx, token, options);
         if (state) {
           ctx.state = state;
           return next();
