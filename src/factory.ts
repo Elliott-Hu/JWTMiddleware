@@ -9,7 +9,7 @@ import {
   DEFAULT_TOKEN_EXPIRED_AUTO_REFRESH,
 } from "./const";
 import type * as ct from "class-transformer";
-import { timeSpan } from "./util";
+import { timeSpan, uniq } from "./util";
 
 export type ClassConstructor<T> = ct.ClassConstructor<T>;
 
@@ -44,6 +44,10 @@ export interface TokenHeader {
   // resKey?: string;
 }
 
+interface BufferConfig {
+  count: number;
+}
+
 interface Options<T = any> {
   token: TokenCookie | TokenHeader;
   ctxState: {
@@ -52,6 +56,13 @@ interface Options<T = any> {
   };
   passthrough?: boolean;
   secret: string;
+  /**
+   * 设置secret缓存数，用于动态弹性切换secret
+   *
+   * @type {BufferConfig}
+   * @memberof Options
+   */
+  buffer?: BufferConfig;
   /**
    * 单个 token 的有效期
    *
@@ -70,6 +81,10 @@ interface Options<T = any> {
   handleValidatePayload?: (payload: T) => boolean;
 }
 
+type SecretBuffer = {
+  secret: string;
+  time: number;
+};
 const UnauthorizedError = rtc.UnauthorizedError;
 
 /**
@@ -87,6 +102,8 @@ export function createJWTMiddleware<T = any>(
   currentUserChecker: (action: rtc.Action) => Promise<T>;
   resignToken: (ctx: KoaContext, token: string) => Promise<any>;
 } {
+  let secretBuffers: SecretBuffer[] = [];
+
   const getOptions = (): Options<T> => {
     const {
       passthrough = false,
@@ -96,6 +113,7 @@ export function createJWTMiddleware<T = any>(
         tokenKey = DEFAULT_STATE_TOKEN_KEY,
         payloadKey = DEFAULT_STATE_PAYLOAD_KEY,
       } = {},
+      buffer: { count: bufferCount = 2 } = {},
       // cookie,
       expiresIn = DEFAULT_TOKEN_EXPIRED,
       expiresInAutoRefresh = DEFAULT_TOKEN_EXPIRED_AUTO_REFRESH,
@@ -103,9 +121,20 @@ export function createJWTMiddleware<T = any>(
       handleValidatePayload,
     } = typeof options === "function" ? options() : options;
 
+    if (!secretBuffers.some((item) => item.secret === secret)) {
+      const buffer: SecretBuffer = {
+        secret,
+        time: Math.round(Date.now() / 1000),
+      };
+
+      secretBuffers = [buffer, ...secretBuffers];
+    }
+    secretBuffers = secretBuffers.slice(0, bufferCount);
+
     return {
       passthrough,
       secret,
+      buffer: { count: bufferCount },
       token: tokenOption,
       ctxState: { tokenKey, payloadKey },
       expiresIn,
@@ -232,19 +261,14 @@ export function createJWTMiddleware<T = any>(
     ctx: KoaContext,
     jwtOptions: koaJWT.Options
   ): string => {
-    const {
-      ctxState: { tokenKey },
-    } = options;
+    const { token } = options;
 
-    if (
-      !ctx.request ||
-      !ctx.request.header ||
-      !ctx.request.header["authorization"]
-    ) {
-      return ctx.cookies.get(tokenKey) || "";
+    let authorization;
+    if (token.type === ("header" as const)) {
+      authorization = ctx?.request?.header?.["authorization"];
+    } else if (token.type === ("cookie" as const)) {
+      authorization = ctx.cookies.get(token.key);
     }
-
-    const authorization = ctx.request.header["authorization"];
 
     const parts = authorization.split(" ");
 
@@ -260,12 +284,28 @@ export function createJWTMiddleware<T = any>(
   };
 
   const getTokenValidateHandler = (options: Options<T>) => {
-    const { token: tokenOption, secret } = options;
+    const {
+      token: tokenOption,
+      secret: _secret,
+      ctxState: { tokenKey, payloadKey },
+    } = options;
+    const secret = uniq(
+      [_secret].concat(
+        secretBuffers
+          .filter(
+            (item) =>
+              Math.ceil(Date.now() / 1000) <
+              timeSpan(options.expiresIn, item.time)
+          )
+          .map((item) => item.secret)
+      )
+    );
+
     return koaJWT.default({
       secret,
       cookie: tokenOption.type === "cookie" ? tokenOption.key : undefined,
-      tokenKey: "token",
-      key: "payload",
+      tokenKey,
+      key: payloadKey,
       passthrough: true,
       getToken: getToken.bind(null, options),
       isRevoked: async () => false,
@@ -305,6 +345,7 @@ export function createJWTMiddleware<T = any>(
       const {
         secret,
         ctxState: { payloadKey, tokenKey },
+        // buffer: { count: bufferCount },
         handleInsertPayload,
         passthrough,
       } = options;
@@ -319,6 +360,12 @@ export function createJWTMiddleware<T = any>(
         }
         return _next(err);
       };
+
+      console.log(
+        "secret 缓存 secret cache",
+        secretBuffers,
+        options.buffer.count
+      );
 
       await getTokenValidateHandler(options)(ctx, () => Promise.resolve());
 

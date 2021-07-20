@@ -1,6 +1,6 @@
 {
   "name": "jwt-rt-middleware",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "适用于routing-controllers框架的JWT校验中间件",
   "main": "./build/index.js",
   "typings": "./build/index.d.ts",
@@ -34,7 +34,7 @@
   },
   "dependencies": {
     "@types/jsonwebtoken": "^8.5.0",
-    "@types/koa": "^2.13.1",
+    "@types/koa": "2.13.4",
     "@types/ms": "^0.7.31",
     "@typescript-eslint/parser": "^4.16.1",
     "class-transformer": "^0.4.0",
@@ -47,7 +47,6 @@
     "routing-controllers": "^0.9.0"
   },
   "peerDependencies": {
-    "@types/koa": "^2.13.1",
-    "routing-controllers": "^0.9.0"
+    "routing-controllers": "^0.7.7"
   }
 }
