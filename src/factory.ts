@@ -113,7 +113,7 @@ export function createJWTMiddleware<T = any>(
         tokenKey = DEFAULT_STATE_TOKEN_KEY,
         payloadKey = DEFAULT_STATE_PAYLOAD_KEY,
       } = {},
-      buffer: { count: bufferCount = 2 } = {},
+      buffer: { count: bufferCount = 1 } = {},
       // cookie,
       expiresIn = DEFAULT_TOKEN_EXPIRED,
       expiresInAutoRefresh = DEFAULT_TOKEN_EXPIRED_AUTO_REFRESH,
@@ -360,12 +360,6 @@ export function createJWTMiddleware<T = any>(
         }
         return _next(err);
       };
-
-      console.log(
-        "secret 缓存 secret cache",
-        secretBuffers,
-        options.buffer.count
-      );
 
       await getTokenValidateHandler(options)(ctx, () => Promise.resolve());
 
