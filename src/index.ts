@@ -1,4 +1,2 @@
-import "reflect-metadata";
-import { createJWTMiddleware } from "./factory";
-
-export { createJWTMiddleware };
+export { createJWTMiddleware } from "./factory";
+export { StoreMemory, createStoreRedis } from "./store";

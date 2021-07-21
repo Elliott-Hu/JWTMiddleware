@@ -10,6 +10,8 @@ import {
 } from "./const";
 import type * as ct from "class-transformer";
 import { timeSpan, uniq } from "./util";
+import { StoreMemory } from "./store/memory";
+import { Store } from "./types";
 
 export type ClassConstructor<T> = ct.ClassConstructor<T>;
 
@@ -46,6 +48,16 @@ export interface TokenHeader {
 
 interface BufferConfig {
   count: number;
+  /**
+   * 指定储藏的方式
+   *
+   * @description 一些分布式的服务需要统一维护secret，因此需要借助redis等存储方式
+   *              中间件提供了相关的抽象类型，外部根据需要灵活处理缓存。默认存储在
+   *              当前服务的内存中
+   * @type {ClassConstructor<any>}
+   * @memberof BufferConfig
+   */
+  storeConstructor?: ClassConstructor<any>;
 }
 
 interface Options<T = any> {
@@ -102,7 +114,7 @@ export function createJWTMiddleware<T = any>(
   currentUserChecker: (action: rtc.Action) => Promise<T>;
   resignToken: (ctx: KoaContext, token: string) => Promise<any>;
 } {
-  let secretBuffers: SecretBuffer[] = [];
+  let store: Store;
 
   const getOptions = (): Options<T> => {
     const {
@@ -113,7 +125,10 @@ export function createJWTMiddleware<T = any>(
         tokenKey = DEFAULT_STATE_TOKEN_KEY,
         payloadKey = DEFAULT_STATE_PAYLOAD_KEY,
       } = {},
-      buffer: { count: bufferCount = 1 } = {},
+      buffer: {
+        count: bufferCount = 1,
+        storeConstructor: Store = StoreMemory,
+      } = {},
       // cookie,
       expiresIn = DEFAULT_TOKEN_EXPIRED,
       expiresInAutoRefresh = DEFAULT_TOKEN_EXPIRED_AUTO_REFRESH,
@@ -121,15 +136,20 @@ export function createJWTMiddleware<T = any>(
       handleValidatePayload,
     } = typeof options === "function" ? options() : options;
 
+    if (!store) {
+      store = new Store({ count: bufferCount });
+    }
+
+    const secretBuffers = store.getStorage();
+
     if (!secretBuffers.some((item) => item.secret === secret)) {
       const buffer: SecretBuffer = {
         secret,
         time: Math.round(Date.now() / 1000),
       };
 
-      secretBuffers = [buffer, ...secretBuffers];
+      store.enqueue([buffer]);
     }
-    secretBuffers = secretBuffers.slice(0, bufferCount);
 
     return {
       passthrough,
@@ -196,7 +216,11 @@ export function createJWTMiddleware<T = any>(
     const { token: tokenOption } = options;
 
     if (tokenOption.type === "cookie") {
-      ctx.cookies.set(tokenOption.key, token, { httpOnly: true });
+      ctx.cookies.set(tokenOption.key, token, {
+        httpOnly: tokenOption.httpOnly ?? true,
+        domain: tokenOption.domain,
+        path: tokenOption.path,
+      });
       return;
     }
     ctx.set("Set-Authorization", `Bearer ${token}`);
@@ -289,6 +313,9 @@ export function createJWTMiddleware<T = any>(
       secret: _secret,
       ctxState: { tokenKey, payloadKey },
     } = options;
+
+    const secretBuffers = store.getStorage();
+
     const secret = uniq(
       [_secret].concat(
         secretBuffers
