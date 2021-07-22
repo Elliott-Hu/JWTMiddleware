@@ -1,6 +1,7 @@
 import { SecretBuffer, Store } from "../types";
 import * as Redis from "redis";
 import { ClassConstructor } from "class-transformer";
+import { uniqBy } from "../util";
 
 interface RedisOptions {
   host: string;
@@ -49,10 +50,12 @@ export const createStoreRedis = (
     getStorageAsync(): Promise<SecretBuffer[]> {
       return new Promise((r) => {
         this.redis.get(opts.key, (error, value) => {
+          console.log("redis key", value);
           this.store = (() => {
             try {
               return JSON.parse(value);
             } catch (error) {
+              console.log("redis error", error);
               return [];
             }
           })();
@@ -77,7 +80,10 @@ export const createStoreRedis = (
      */
     enqueue(secretBuffer: SecretBuffer[]) {
       this.getStorageAsync().then((buffers) => {
-        const store = [...secretBuffer, ...buffers].slice(0, this.count);
+        const store = uniqBy([...secretBuffer, ...buffers], "secret").slice(
+          0,
+          this.count
+        );
         this.redis.set(opts.key, JSON.stringify(store));
         this.store = store;
       });

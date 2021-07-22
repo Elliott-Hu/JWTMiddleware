@@ -34,3 +34,23 @@ export function timeSpan(time: string | number, iat?: number) {
 export function uniq(arr: any[]): any[] {
   return Array.from(new Set(arr));
 }
+
+interface Data {
+  [propname: string]: any;
+}
+
+/**
+ * 根据某个字段去重数组
+ *
+ * @export
+ * @param {Data[]} data
+ * @param {string} dep
+ * @return {Data[]}
+ */
+export function uniqBy(data: Data[], dep: string) {
+  const hash: Data = {};
+  return data.reduce((preVal, curVal) => {
+    hash[curVal[dep]] ? "" : (hash[curVal[dep]] = true && preVal.push(curVal));
+    return preVal;
+  }, []);
+}

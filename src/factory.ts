@@ -289,9 +289,9 @@ export function createJWTMiddleware<T = any>(
 
     let authorization;
     if (token.type === ("header" as const)) {
-      authorization = ctx?.request?.header?.["authorization"];
+      authorization = ctx?.request?.header?.["authorization"] || "";
     } else if (token.type === ("cookie" as const)) {
-      authorization = ctx.cookies.get(token.key);
+      authorization = ctx.cookies.get(token.key) ?? "";
     }
 
     const parts = authorization.split(" ");
@@ -326,6 +326,12 @@ export function createJWTMiddleware<T = any>(
           )
           .map((item) => item.secret)
       )
+    );
+
+    console.log(
+      "verify",
+      JSON.stringify(secretBuffers),
+      JSON.stringify(secret)
     );
 
     return koaJWT.default({
