@@ -53,7 +53,7 @@ export const createStoreRedis = (
           console.log("redis key", value);
           this.store = (() => {
             try {
-              return JSON.parse(value);
+              return JSON.parse(value) || [];
             } catch (error) {
               console.log("redis error", error);
               return [];
