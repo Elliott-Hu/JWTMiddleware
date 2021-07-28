@@ -1,6 +1,6 @@
 {
   "name": "jwt-rt-middleware",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "适用于routing-controllers框架的JWT校验中间件",
   "main": "./build/index.js",
   "typings": "./build/index.d.ts",

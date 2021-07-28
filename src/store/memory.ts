@@ -1,4 +1,4 @@
-import { timeSpan } from "../../src/util";
+import { timeSpan } from "../util";
 import { SecretBuffer, Store } from "../types";
 
 /**
