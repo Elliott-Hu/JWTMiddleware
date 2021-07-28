@@ -1,7 +1,7 @@
 import { SecretBuffer, Store } from "../types";
 import * as Redis from "redis";
 import { ClassConstructor } from "class-transformer";
-import { uniqBy } from "../util";
+import { timeSpan, uniqBy } from "../util";
 
 interface RedisOptions {
   host: string;
@@ -23,6 +23,7 @@ export const createStoreRedis = (
   return class StoreRedis extends Store {
     private count: number = 1;
     private store: SecretBuffer[] = [];
+    private expiresIn: number | string;
     private redis: Redis.RedisClient;
     /**
      * Creates an instance of StoreMemory.
@@ -33,6 +34,7 @@ export const createStoreRedis = (
     constructor(options: any) {
       super();
       this.count = options.count;
+      this.expiresIn = options.expiresIn;
       this.redis = Redis.createClient({
         host: opts.host,
         port: opts.port,
@@ -79,7 +81,13 @@ export const createStoreRedis = (
      * @param {SecretBuffer[]} secretBuffer
      */
     enqueue(secretBuffer: SecretBuffer[]) {
-      this.getStorageAsync().then((buffers) => {
+      this.getStorageAsync().then((_buffers) => {
+        // 刷新上一个 secret 的超时时间
+        const timeout = timeSpan(this.expiresIn, Date.now() / 1000);
+        const buffers = _buffers.map((item, index) =>
+          !!index ? item : { ...item, timeout }
+        );
+
         const store = uniqBy([...secretBuffer, ...buffers], "secret").slice(
           0,
           this.count

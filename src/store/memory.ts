@@ -1,3 +1,4 @@
+import { timeSpan } from "../../src/util";
 import { SecretBuffer, Store } from "../types";
 
 /**
@@ -10,6 +11,8 @@ import { SecretBuffer, Store } from "../types";
 export class StoreMemory extends Store {
   private count: number = 1;
   private store: SecretBuffer[] = [];
+  private expiresIn: number | string;
+
   /**
    * Creates an instance of StoreMemory.
    *
@@ -18,6 +21,7 @@ export class StoreMemory extends Store {
    */
   constructor(options: any) {
     super();
+    this.expiresIn = options.expiresIn;
     this.count = options.count;
     this.store = options.store || [];
   }
@@ -37,7 +41,12 @@ export class StoreMemory extends Store {
    * @memberof StoreMemory
    */
   enqueue(secretBuffer: SecretBuffer[]) {
-    this.store.unshift(...secretBuffer);
-    this.store = this.store.slice(this.count);
+    // 刷新上一个 secret 的超时时间
+    const timeout = timeSpan(this.expiresIn, Date.now() / 1000);
+    const buffers = this.store.map((item, index) =>
+      !!index ? item : { ...item, timeout }
+    );
+
+    this.store = [...secretBuffer, ...buffers].slice(this.count);
   }
 }

@@ -11,7 +11,7 @@ import {
 import type * as ct from "class-transformer";
 import { timeSpan, uniq } from "./util";
 import { StoreMemory } from "./store/memory";
-import { Store } from "./types";
+import { SecretBuffer, Store } from "./types";
 
 export type ClassConstructor<T> = ct.ClassConstructor<T>;
 
@@ -93,10 +93,6 @@ interface Options<T = any> {
   handleValidatePayload?: (payload: T) => boolean;
 }
 
-type SecretBuffer = {
-  secret: string;
-  time: number;
-};
 const UnauthorizedError = rtc.UnauthorizedError;
 
 /**
@@ -145,7 +141,6 @@ export function createJWTMiddleware<T = any>(
     if (!secretBuffers.some((item) => item.secret === secret)) {
       const buffer: SecretBuffer = {
         secret,
-        time: Math.round(Date.now() / 1000),
       };
 
       store.enqueue([buffer]);
@@ -321,17 +316,11 @@ export function createJWTMiddleware<T = any>(
         secretBuffers
           .filter(
             (item) =>
-              Math.ceil(Date.now() / 1000) <
-              timeSpan(options.expiresIn, item.time)
+              item.timeout === undefined ||
+              Math.ceil(Date.now() / 1000) < item.timeout
           )
           .map((item) => item.secret)
       )
-    );
-
-    console.log(
-      "verify",
-      JSON.stringify(secretBuffers),
-      JSON.stringify(secret)
     );
 
     return koaJWT.default({
@@ -396,11 +385,11 @@ export function createJWTMiddleware<T = any>(
 
       await getTokenValidateHandler(options)(ctx, () => Promise.resolve());
 
-      if (!ctx.state.token) {
+      if (ctx.state?.jwtOriginalError?.name === "TokenExpiredError") {
         if (passthrough) {
           return next();
         }
-        // 如果没有获取到ctx.state.token的情况下，有可能是token失效了，需要重签
+
         const token = getToken(options, ctx, {
           passthrough: true,
           secret,

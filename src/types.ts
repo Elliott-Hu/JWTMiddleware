@@ -1,6 +1,6 @@
 export type SecretBuffer = {
   secret: string;
-  time: number;
+  timeout?: number;
 };
 
 /**
